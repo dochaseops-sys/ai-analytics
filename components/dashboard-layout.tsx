@@ -69,25 +69,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const collapsed = isCollapsed && !forceExpanded;
     return (
       <div className="flex flex-col h-full bg-card transition-all duration-300">
-        <div className={`flex h-16 items-center ${collapsed ? 'justify-center px-0' : 'justify-between px-6'} border-b border-border`}>
-          <div className="flex items-center gap-2 overflow-hidden">
-            <ShieldCheck className="h-6 w-6 text-indigo-500 shrink-0" />
-            {!collapsed && (
-              <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-foreground to-muted-foreground truncate">
-                Tracking Health AI
-              </span>
-            )}
-          </div>
-          {!collapsed && (
+        <div className={`flex h-16 items-center ${collapsed ? 'justify-center' : 'justify-between px-6'} border-b border-border`}>
+          {collapsed ? (
             <Button
               variant="ghost"
               size="icon"
               onClick={toggleCollapse}
-              className="h-8 w-8 text-muted-foreground hover:bg-accent rounded-lg cursor-pointer shrink-0"
-              title="Collapse sidebar"
+              className="h-10 w-10 rounded-xl hover:bg-accent cursor-pointer flex items-center justify-center relative group shrink-0"
+              title="Expand sidebar"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ShieldCheck className="h-6 w-6 text-indigo-500 transition-all duration-200 group-hover:opacity-0 group-hover:scale-75" />
+              <ChevronRight className="h-5 w-5 text-muted-foreground transition-all duration-200 absolute opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100" />
             </Button>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 overflow-hidden">
+                <ShieldCheck className="h-6 w-6 text-indigo-500 shrink-0" />
+                <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-foreground to-muted-foreground truncate">
+                  Tracking Health AI
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleCollapse}
+                className="h-8 w-8 text-muted-foreground hover:bg-accent rounded-lg cursor-pointer shrink-0"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </>
           )}
         </div>
 
@@ -139,15 +150,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 <LogOut className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleCollapse}
-                className="h-8 w-8 text-muted-foreground hover:bg-accent rounded-lg cursor-pointer"
-                title="Expand sidebar"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
             </div>
           ) : (
             <>
@@ -198,8 +200,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground font-sans">
-      <aside className={`hidden md:flex flex-col ${isCollapsed ? 'w-16' : 'w-64'} border-r border-border bg-card shrink-0 transition-all duration-300`}>
+    <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans">
+      <aside className={`hidden md:flex flex-col ${isCollapsed ? 'w-16' : 'w-64'} border-r border-border bg-card shrink-0 transition-all duration-300 h-full`}>
         {renderSidebar(false)}
       </aside>
 
