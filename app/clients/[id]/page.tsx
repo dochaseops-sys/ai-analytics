@@ -543,8 +543,8 @@ export default function ClientWorkspacePage() {
             
             <div className="flex flex-wrap items-center gap-3">
               <Link href={`/clients/${clientId}/gtm-agent`}>
-                <Button className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white font-medium gap-2 rounded-xl h-11 px-5 cursor-pointer">
-                  <Bot className="h-4 w-4 text-indigo-400" />
+                <Button className="bg-indigo-500/10 border border-indigo-500/40 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-medium gap-2 rounded-xl h-11 px-5 cursor-pointer">
+                  <Bot className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
                   <span>GTM Implementation Agent</span>
                 </Button>
               </Link>
