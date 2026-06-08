@@ -22,6 +22,19 @@ const recommendationValue = (recommendation: unknown, key: string) => {
   return typeof value === 'string' ? value : '';
 };
 
+const recommendationContextValue = (recommendation: unknown, key: string) => {
+  if (!recommendation || typeof recommendation !== 'object') return '';
+  const context = (recommendation as Record<string, unknown>).implementationContext;
+  if (!context || typeof context !== 'object') return '';
+  const value = (context as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+};
+
+const recommendationImplementationType = (recommendation: unknown) => {
+  const value = recommendationValue(recommendation, 'implementationType').toLowerCase();
+  return value;
+};
+
 export function detectTagIntent(command: string, recommendation?: unknown, answers?: Record<string, string>): RequirementAnalysis['tagIntent'] {
   const answeredType = answers?.tagType?.toLowerCase() || '';
   if (answeredType.includes('meta')) return 'meta_pixel';
@@ -30,7 +43,13 @@ export function detectTagIntent(command: string, recommendation?: unknown, answe
   if (answeredType.includes('html') || answeredType.includes('custom') || answeredType.includes('script')) return 'custom_html';
 
   const issueId = recommendationValue(recommendation, 'issueId');
+  const implementationType = recommendationImplementationType(recommendation);
   const text = `${command} ${recommendationValue(recommendation, 'title')} ${recommendationValue(recommendation, 'recommendation')} ${issueId}`.toLowerCase();
+
+  if (implementationType.includes('meta')) return 'meta_pixel';
+  if (implementationType.includes('tiktok')) return 'tiktok_pixel';
+  if (implementationType.includes('ga4') || implementationType.includes('gtm_trigger')) return 'ga4_event';
+  if (implementationType.includes('custom_html')) return 'custom_html';
 
   if (text.includes('meta') || text.includes('facebook pixel')) return 'meta_pixel';
   if (text.includes('tiktok') || text.includes('tik tok')) return 'tiktok_pixel';
@@ -52,6 +71,7 @@ export function analyzeRequirements(context: RequirementContext): RequirementAna
   const command = context.command.toLowerCase();
 
   const trigger = getAnswer(answers, 'trigger') || (command.includes('all pages') ? 'all_pages' : undefined);
+  const recommendationTrigger = recommendationContextValue(context.recommendation, 'triggerType');
   if (trigger) inferred.trigger = trigger;
 
   if (tagIntent === 'meta_pixel') {
@@ -81,13 +101,14 @@ export function analyzeRequirements(context: RequirementContext): RequirementAna
 
     const eventName =
       getAnswer(answers, 'eventName') ||
+      recommendationContextValue(context.recommendation, 'eventName') ||
       (command.includes('whatsapp') ? 'whatsapp_click' : undefined) ||
       (command.includes('lead') ? 'generate_lead' : undefined) ||
       (command.includes('form_submit') || recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined);
     if (eventName) inferred.eventName = eventName;
     else missing.push({ field: 'eventName', question: 'What GA4 event name should be created?' });
 
-    const inferredTrigger = trigger || (command.includes('whatsapp') ? 'click' : recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined);
+    const inferredTrigger = trigger || recommendationTrigger || (command.includes('whatsapp') ? 'click' : recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined);
     if (inferredTrigger) inferred.trigger = inferredTrigger;
     else missing.push({ field: 'trigger', question: 'What user action or page condition should fire this event?' });
   }

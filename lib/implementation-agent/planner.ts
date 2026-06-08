@@ -22,6 +22,14 @@ function triggerTypeFromValue(trigger: string): 'pageview' | 'click' | 'form_sub
   return 'custom_event';
 }
 
+function recommendationContextValue(recommendation: unknown, key: string) {
+  if (!recommendation || typeof recommendation !== 'object') return '';
+  const context = (recommendation as Record<string, unknown>).implementationContext;
+  if (!context || typeof context !== 'object') return '';
+  const value = (context as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : '';
+}
+
 function planId() {
   return adminDb.collection('implementation_plans').doc().id;
 }
@@ -98,9 +106,15 @@ export async function createImplementationPlan(context: RequirementContext): Pro
       name: triggerName,
       triggerType,
       conditions:
-        inferred.trigger === 'click' && context.command.toLowerCase().includes('whatsapp')
-          ? [{ variable: 'Click URL', operator: 'contains', value: 'wa.me' }]
-          : undefined
+        inferred.trigger === 'click'
+          ? [{
+              variable: recommendationContextValue(context.recommendation, 'selectorHint') ? 'Click Element' : 'Click URL',
+              operator: 'contains',
+              value: recommendationContextValue(context.recommendation, 'urlPattern') || recommendationContextValue(context.recommendation, 'selectorHint') || (context.command.toLowerCase().includes('whatsapp') ? 'wa.me' : 'http')
+            }]
+          : inferred.trigger === 'pageview' && recommendationContextValue(context.recommendation, 'urlPattern')
+            ? [{ variable: 'Page URL', operator: 'contains', value: recommendationContextValue(context.recommendation, 'urlPattern') }]
+            : undefined
     }
   ];
 

@@ -138,9 +138,17 @@ export default function GTMAgentPage() {
       const commandParam = searchParams.get('command');
       const recIssueId = searchParams.get('recIssueId');
       const recText = searchParams.get('recText');
+      const recPayload = searchParams.get('recPayload');
       if (commandParam) {
         setImplementationCommand(commandParam);
-        const recommendation = recIssueId && recText ? { issueId: recIssueId, recommendation: recText } : undefined;
+        let recommendation = recIssueId && recText ? { issueId: recIssueId, recommendation: recText } : undefined;
+        if (recPayload) {
+          try {
+            recommendation = JSON.parse(recPayload);
+          } catch (err) {
+            console.warn('Failed to parse recommendation payload:', err);
+          }
+        }
         handleImplementationCommand(commandParam, recommendation);
       }
     }
