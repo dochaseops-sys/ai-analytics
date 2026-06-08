@@ -1,4 +1,11 @@
 import { AuditRule, AuditResult } from '../types';
+import { findMatchingName, findMatchingConversion, findGtmTagByName, getSummaryList } from './rule-utils';
+
+const leadEventPatterns = [
+  'generate_lead', 'lead', 'sign_up', 'signup',
+  'registration', 'register', 'complete_registration',
+  'contact', 'contact_us', 'new_lead', 'form_submit'
+];
 
 export const leadExistsRule: AuditRule = {
   id: 'lead-exists',
@@ -6,85 +13,34 @@ export const leadExistsRule: AuditRule = {
   category: 'Conversion Tracking',
   severity: 'high',
   async run(context): Promise<AuditResult> {
-    const leadEventNames = [
-      'generate_lead', 'lead', 'sign_up', 'signup',
-      'registration', 'register', 'complete_registration',
-      'contact', 'contact_us'
-    ];
+    const eventNames = context.ga4Data?.eventsList ?? [];
+    const matchedEvent = findMatchingName(eventNames, leadEventPatterns);
+    const matchedConversion = findMatchingConversion(context.ga4Data?.conversions, leadEventPatterns);
+    const matchedGtmTag = findGtmTagByName(context.gtmData?.tags, leadEventPatterns);
+    const hasLeadEvent = !!context.ga4Data?.hasLeadEvent || !!matchedEvent || !!matchedConversion || !!matchedGtmTag;
 
-    // Check GA4 events last 7 days
-    const matchedEvent = context.ga4Data?.eventsList?.find(e => 
-      leadEventNames.includes(e.toLowerCase())
-    );
-
-    // Check GA4 conversions
-    const matchedConversion = context.ga4Data?.conversions?.find(c => 
-      leadEventNames.includes(c.name.toLowerCase())
-    );
-
-    // Check GTM tags for GA4 lead tracking tags
-    const matchedGtmTag = context.gtmData?.tags?.find(t => {
-      const name = t.name.toLowerCase();
-      const isGa4Event = t.type === 'gaawe';
-      const isCustomHtmlGa4 = t.type === 'html' && (name.includes('ga4') || name.includes('google analytics') || name.includes('gtag'));
-      
-      if (!isGa4Event && !isCustomHtmlGa4) return false;
-
-      return name.includes('lead') || 
-             name.includes('sign up') || 
-             name.includes('signup') || 
-             name.includes('registration') || 
-             name.includes('register') || 
-             name.includes('contact');
-    });
-
-    const passed = !!context.ga4Data?.hasLeadEvent || !!matchedEvent || !!matchedConversion || !!matchedGtmTag;
-    
     let description = '';
-    let recommendation = '';
+    let recommendation = 'Confirm that lead parameters (like lead source or value) are being collected.';
 
-    if (passed) {
+    if (hasLeadEvent) {
       if (matchedEvent) {
         description = `Lead generation event tracking is active (detected "${matchedEvent}" in GA4 events).`;
       } else if (matchedConversion) {
-        description = `Lead generation event tracking is active (detected "${matchedConversion.name}" configured as a conversion in GA4).`;
+        description = `Lead generation tracking is active (detected conversion "${matchedConversion.name}" in GA4).`;
       } else if (matchedGtmTag) {
-        description = `Lead generation event tracking is active (detected GTM tag "${matchedGtmTag.name}" configured for lead capture).`;
+        description = `Lead generation tracking appears configured in GTM (tag "${matchedGtmTag.name}"). Verify that this tag is firing and sending data to GA4.`;
       } else {
         description = 'Lead generation event tracking is active and receiving data.';
       }
-      recommendation = 'Confirm that lead parameters (like lead source or value) are being collected.';
     } else {
-      description = 'No lead generation events (such as "generate_lead", "lead", "sign_up", "registration", or "contact") have been detected in GA4.';
-      recommendation = 'Set up the GA4 standard \'generate_lead\' event to fire upon successful completion of all lead capture forms or submission to lead-specific thank-you pages.';
-    }
+      const detectedForms = context.websiteScan?.detectedLeadForms ?? [];
+      const keyActions = context.websiteScan?.keyActions ?? [];
+      const suggestedActions = getSummaryList([...detectedForms, ...keyActions], 4);
 
-    if (!passed && context.websiteScan) {
-      const detectedForms = context.websiteScan.detectedLeadForms || [];
-      const keyActions = context.websiteScan.keyActions || [];
-      const items = [...detectedForms, ...keyActions].filter(Boolean);
-      
-      if (items.length > 0) {
-        const uniqueItems = Array.from(new Set(items)).slice(0, 3);
-        description = `No lead generation events (such as "generate_lead", "lead", "sign_up", "registration", or "contact") have been detected in GA4. After scanning your website, we identified key actions that should be tracked: ${uniqueItems.join(', ')}.`;
-        recommendation = `Set up the GA4 standard 'generate_lead' event to fire upon successful completion of these key actions: ${uniqueItems.join(', ')}. Note that sign up, registration, contact, and lead submissions are all categorized as lead events in GA4.`;
-      }
-    } else if (passed && context.websiteScan) {
-      const detectedForms = context.websiteScan.detectedLeadForms || [];
-      if (detectedForms.length > 0) {
-        // Build a prefix based on what was detected
-        let prefix = '';
-        if (matchedEvent) {
-          prefix = `Lead generation event tracking is active (detected "${matchedEvent}" in GA4 events).`;
-        } else if (matchedConversion) {
-          prefix = `Lead generation event tracking is active (detected "${matchedConversion.name}" configured as a conversion).`;
-        } else if (matchedGtmTag) {
-          prefix = `Lead generation event tracking is active (detected GTM tag "${matchedGtmTag.name}").`;
-        } else {
-          prefix = `Lead generation event tracking is active.`;
-        }
-        description = `${prefix} We verified this against your website's key actions: ${detectedForms.slice(0, 2).join(', ')}.`;
-      }
+      description = 'No lead generation events were detected in GA4.';
+      recommendation = suggestedActions
+        ? `Set up the GA4 standard 'generate_lead' event to fire for these key actions: ${suggestedActions}.`
+        : 'Set up the GA4 standard "generate_lead" event on your lead capture forms and thank-you pages.';
     }
 
     return {
@@ -94,7 +50,7 @@ export const leadExistsRule: AuditRule = {
       description,
       recommendation,
       category: this.category,
-      passed
+      passed: hasLeadEvent
     };
   }
 };

@@ -1,4 +1,16 @@
 import { AuditRule, AuditResult } from '../types';
+import { findMatchingName, findGtmTagByName, getSummaryList, normalizeName } from './rule-utils';
+
+const leadEventPatterns = [
+  'generate_lead', 'lead', 'sign_up', 'signup',
+  'registration', 'register', 'complete_registration',
+  'contact', 'contact_us', 'new_lead', 'form_submit'
+];
+
+const formSubmitPatterns = [
+  'form_submit', 'submit_form', 'form submission',
+  'contact form', 'signup form', 'registration form', 'form completion'
+];
 
 export const formSubmitExistsRule: AuditRule = {
   id: 'form-submit-exists',
@@ -6,62 +18,42 @@ export const formSubmitExistsRule: AuditRule = {
   category: 'Event Quality',
   severity: 'medium',
   async run(context): Promise<AuditResult> {
-    const leadEventNames = [
-      'generate_lead', 'lead', 'sign_up', 'signup',
-      'registration', 'register', 'complete_registration',
-      'contact', 'contact_us'
-    ];
+    const eventNames = context.ga4Data?.eventsList ?? [];
+    const hasFormSubmitEvent = !!context.ga4Data?.hasFormSubmitEvent || !!findMatchingName(eventNames, formSubmitPatterns);
+    const hasLeadEvent = !!context.ga4Data?.hasLeadEvent || !!findMatchingName(eventNames, leadEventPatterns);
+    const hasLeadConversion = !!context.ga4Data?.conversions?.some((c) => findMatchingName([c.name], leadEventPatterns));
+    const hasLeadTag = !!findGtmTagByName(context.gtmData?.tags, leadEventPatterns);
+    const hasFormTrigger = !!context.gtmData?.triggers?.some((trigger) => {
+      const name = normalizeName(trigger.name || '');
+      return trigger.type === 'formSubmission' || formSubmitPatterns.some((pattern) => name.includes(normalizeName(pattern)));
+    });
 
-    const hasGa4LeadEvent = context.ga4Data?.eventsList?.some(e => 
-      leadEventNames.includes(e.toLowerCase())
-    ) || false;
+    const passed = hasFormSubmitEvent || hasLeadEvent || hasLeadConversion || hasLeadTag || hasFormTrigger;
 
-    const hasGa4LeadConversion = context.ga4Data?.conversions?.some(c => 
-      leadEventNames.includes(c.name.toLowerCase())
-    ) || false;
+    const explanationParts: string[] = [];
+    if (hasFormSubmitEvent) explanationParts.push('GA4 form submit events are present');
+    if (hasLeadEvent) explanationParts.push('GA4 lead events are present');
+    if (hasLeadConversion) explanationParts.push('lead conversions are configured in GA4');
+    if (hasLeadTag) explanationParts.push('a GTM tag exists for lead/form interaction tracking');
+    if (hasFormTrigger) explanationParts.push('a GTM form submission trigger is present');
 
-    const hasGtmLeadTag = context.gtmData?.tags?.some(t => {
-      const name = t.name.toLowerCase();
-      const isGa4Event = t.type === 'gaawe';
-      const isCustomHtmlGa4 = t.type === 'html' && (name.includes('ga4') || name.includes('google analytics') || name.includes('gtag'));
-      
-      if (!isGa4Event && !isCustomHtmlGa4) return false;
-
-      return name.includes('lead') || 
-             name.includes('sign up') || 
-             name.includes('signup') || 
-             name.includes('registration') || 
-             name.includes('register') || 
-             name.includes('contact');
-    }) || false;
-
-    const hasLead = !!context.ga4Data?.hasLeadEvent || hasGa4LeadEvent || hasGa4LeadConversion || hasGtmLeadTag;
-
-    const hasFormSubmit = !!context.ga4Data?.hasFormSubmitEvent || 
-                          context.ga4Data?.eventsList?.some(e => ['form_submit', 'submit_form'].includes(e.toLowerCase())) ||
-                          context.gtmData?.triggers?.some(t => {
-                            const type = t.type;
-                            const name = t.name.toLowerCase();
-                            return type === 'formSubmission' || name.includes('form submit') || name.includes('form submission');
-                          }) ||
-                          false;
-    
-    const passed = hasFormSubmit || hasLead;
-    
     let description = '';
     let recommendation = '';
-    
+
     if (passed) {
-      if (hasFormSubmit) {
-        description = 'Form submission tracking is working and receiving events.';
-        recommendation = 'Ensure that form ID or form name parameters are being logged to distinguish between forms.';
-      } else {
-        description = 'Form submission tracking is satisfied since a lead generation conversion event is already active.';
-        recommendation = 'No action required. Form interactions are already tracked and captured via your active lead conversion events.';
-      }
+      description = `Form submission tracking is detected: ${getSummaryList(explanationParts)}.`;
+      recommendation = hasFormSubmitEvent || hasFormTrigger
+        ? 'Keep tracking active forms and capture form IDs or page paths so form submissions are clearly attributable in GA4.'
+        : 'Review the existing lead/form tracking setup and ensure GA4 receives form submission events from all key capture points.';
     } else {
-      description = 'No form submission events (e.g., "form_submit", "submit_form") were detected in your GA4 property.';
-      recommendation = 'Enable GA4 Enhanced Measurement for Form Interactions, or configure a custom GTM form trigger.';
+      const detectedForms = context.websiteScan?.detectedLeadForms ?? [];
+      const keyActions = context.websiteScan?.keyActions ?? [];
+      const summaryActions = getSummaryList([...detectedForms, ...keyActions], 4);
+
+      description = 'No form submission or lead generation tracking could be confirmed in GA4 or GTM.';
+      recommendation = summaryActions
+        ? `Configure form submission tracking for the following key actions: ${summaryActions}. Use GA4 event names like 'form_submit' or 'generate_lead'.`
+        : 'Enable GA4 form submission tracking using Enhanced Measurement or a custom GTM form trigger, then verify events appear in GA4.';
     }
 
     return {

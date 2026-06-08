@@ -14,7 +14,7 @@ export interface GTMTag {
   type: string;
   firingTriggerId?: string[];
   blockingTriggerId?: string[];
-  consentSettings?: any;
+  consentSettings?: Record<string, unknown>;
 }
 
 export interface GTMTrigger {
