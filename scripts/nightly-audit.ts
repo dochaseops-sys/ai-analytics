@@ -171,7 +171,7 @@ async function executeNightlyAudit() {
                 type: t.type || '',
                 firingTriggerId: t.firingTriggerId || [],
                 blockingTriggerId: t.blockingTriggerId || [],
-                consentSettings: t.consentSettings || undefined
+                consentSettings: t.consentSettings as Record<string, unknown> | undefined || undefined
               }));
 
               const triggers: GTMTrigger[] = (triggersRes.data.trigger || []).map(t => ({

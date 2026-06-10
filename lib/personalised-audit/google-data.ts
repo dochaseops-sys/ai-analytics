@@ -146,7 +146,7 @@ export async function fetchAuditEvidence(clientId: string): Promise<{
         type: tag.type || '',
         firingTriggerId: tag.firingTriggerId || [],
         blockingTriggerId: tag.blockingTriggerId || [],
-        consentSettings: tag.consentSettings || undefined
+        consentSettings: tag.consentSettings as Record<string, unknown> | undefined || undefined
       }));
       const triggers: GTMTrigger[] = (triggersRes.data.trigger || []).map((trigger) => ({
         triggerId: trigger.triggerId || '',

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { ChatMessage } from '@/components/chat-message';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard-layout';
@@ -12,15 +13,15 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  BarChart3, 
-  Tag, 
-  Activity, 
-  CheckCircle2, 
-  Play, 
-  Sparkles, 
-  Download, 
-  MessageSquare, 
+import {
+  BarChart3,
+  Tag,
+  Activity,
+  CheckCircle2,
+  Play,
+  Sparkles,
+  Download,
+  MessageSquare,
   Send,
   HelpCircle,
   AlertCircle,
@@ -29,7 +30,6 @@ import {
   X,
   Bot,
   ClipboardCheck,
-  ShieldAlert
 } from 'lucide-react';
 
 export default function ClientWorkspacePage() {
@@ -63,10 +63,7 @@ export default function ClientWorkspacePage() {
   const [auditHistory, setAuditHistory] = useState<any[]>([]);
   const [runningAudit, setRunningAudit] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
-  const [clientProfile, setClientProfile] = useState<any>(null);
-  const [personalisedAudit, setPersonalisedAudit] = useState<any>(null);
-  const [runningPersonalisedAudit, setRunningPersonalisedAudit] = useState(false);
-  const [personalisedError, setPersonalisedError] = useState<string | null>(null);
+  const [hasPersonalisedAudit, setHasPersonalisedAudit] = useState(false);
 
   // Gemini Explanation
   const [generatingExplanation, setGeneratingExplanation] = useState(false);
@@ -137,7 +134,14 @@ export default function ClientWorkspacePage() {
 
       // 5. Fetch Audits
       await fetchAudits();
-      await fetchPersonalisedAudit();
+      // Check if a personalised audit exists
+      try {
+        const auditRes = await fetch(`/api/audit/personalised/${clientId}`);
+        if (auditRes.ok) {
+          const d = await auditRes.json();
+          setHasPersonalisedAudit(!!d.auditRun);
+        }
+      } catch { /* non-critical */ }
 
     } catch (err) {
       console.error('Error fetching client workspace:', err);
@@ -146,28 +150,7 @@ export default function ClientWorkspacePage() {
     }
   };
 
-  const fetchPersonalisedAudit = async () => {
-    try {
-      const [profileRes, auditRes] = await Promise.all([
-        fetch(`/api/client-intelligence/profile/${clientId}`),
-        fetch(`/api/audit/personalised/${clientId}`)
-      ]);
 
-      if (profileRes.ok) {
-        const profileData = await profileRes.json();
-        setClientProfile(profileData.profile || null);
-      } else {
-        setClientProfile(null);
-      }
-
-      if (auditRes.ok) {
-        const auditData = await auditRes.json();
-        setPersonalisedAudit(auditData.auditRun || null);
-      }
-    } catch (err) {
-      console.error('Error fetching personalised audit:', err);
-    }
-  };
 
   const fetchAudits = async () => {
     const q = query(
@@ -368,30 +351,6 @@ export default function ClientWorkspacePage() {
     }
   };
 
-  const handleRunPersonalisedAudit = async () => {
-    try {
-      setRunningPersonalisedAudit(true);
-      setPersonalisedError(null);
-      const res = await fetch('/api/audit/personalised/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, refreshProfile: !clientProfile })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setClientProfile(data.profile);
-        setPersonalisedAudit(data.auditRun);
-      } else {
-        setPersonalisedError(data.error || 'Failed to run personalised audit.');
-      }
-    } catch (err) {
-      console.error(err);
-      setPersonalisedError((err as Error).message);
-    } finally {
-      setRunningPersonalisedAudit(false);
-    }
-  };
-
   const handleGenerateExplanation = async () => {
     if (!latestAudit) return;
     try {
@@ -417,19 +376,6 @@ export default function ClientWorkspacePage() {
   const handleImplementRecommendation = (result: any) => {
     const command = `Fix the ${result.issueId} tracking recommendation: ${result.recommendation}`;
     router.push(`/clients/${clientId}/gtm-agent?command=${encodeURIComponent(command)}&recIssueId=${encodeURIComponent(result.issueId)}&recText=${encodeURIComponent(result.recommendation)}`);
-  };
-
-  const handleImplementPersonalisedRecommendation = async (recommendation: any) => {
-    try {
-      const res = await fetch(`/api/audit/personalised/recommendations/${recommendation.id}/implement`, {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create implementation request.');
-      router.push(`/clients/${clientId}/gtm-agent?command=${encodeURIComponent(data.command)}&requestId=${encodeURIComponent(data.requestId)}&recIssueId=${encodeURIComponent(recommendation.ruleId)}&recText=${encodeURIComponent(recommendation.recommendedFix)}&recPayload=${encodeURIComponent(JSON.stringify(recommendation))}`);
-    } catch (err) {
-      alert((err as Error).message);
-    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -491,23 +437,6 @@ export default function ClientWorkspacePage() {
   };
 
   const formatLabel = (value: string) => value?.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) || 'Unknown';
-
-  const expectedEventStatus = (eventName: string) => {
-    const missing = personalisedAudit?.gaps?.some((gap: any) => gap.ruleId === 'expected-critical-event-missing' && gap.evidence?.expectedEvent === eventName);
-    const notKey = personalisedAudit?.gaps?.some((gap: any) => gap.ruleId === 'expected-event-not-key-event' && gap.evidence?.eventName === eventName);
-    if (missing) return 'Missing';
-    if (notKey) return 'Not key event';
-    return personalisedAudit ? 'No gap detected' : 'Pending audit';
-  };
-
-  const ctaTrackingStatus = (cta: any) => {
-    const hasGtmGap = personalisedAudit?.gaps?.some((gap: any) => gap.ruleId === 'cta-no-gtm-trigger' && gap.evidence?.label === cta.label && gap.evidence?.pageUrl === cta.pageUrl);
-    const hasGa4Gap = personalisedAudit?.gaps?.some((gap: any) => gap.ruleId === 'cta-no-ga4-event' && gap.evidence?.label === cta.label && gap.evidence?.pageUrl === cta.pageUrl);
-    if (hasGtmGap && hasGa4Gap) return 'GA4 event and GTM trigger missing';
-    if (hasGtmGap) return 'GTM trigger missing';
-    if (hasGa4Gap) return 'GA4 event missing';
-    return personalisedAudit ? 'No gap detected' : 'Pending audit';
-  };
 
   const filteredGA4 = availableGA4.filter(p => 
     p.name.toLowerCase().includes(ga4Search.toLowerCase()) || 
@@ -601,18 +530,12 @@ export default function ClientWorkspacePage() {
                 )}
                 <span>Run Tracking Audit</span>
               </Button>
-              <Button
-                onClick={handleRunPersonalisedAudit}
-                disabled={runningPersonalisedAudit}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-2 rounded-xl h-11 px-5 shadow-lg shadow-emerald-600/10 cursor-pointer"
-              >
-                {runningPersonalisedAudit ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : (
+              <Link href={`/clients/${clientId}/personalised-audit`}>
+                <Button className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-2 rounded-xl h-11 px-5 shadow-lg shadow-emerald-600/10 cursor-pointer">
                   <ClipboardCheck className="h-4 w-4" />
-                )}
-                <span>Run Personalised Audit</span>
-              </Button>
+                  <span>{hasPersonalisedAudit ? 'View Personalised Audit' : 'Personalised Audit'}</span>
+                </Button>
+              </Link>
             </div>
           </div>
 
@@ -620,13 +543,6 @@ export default function ClientWorkspacePage() {
             <div className="flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <p>{auditError}</p>
-            </div>
-          )}
-
-          {personalisedError && (
-            <div className="flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
-              <AlertCircle className="h-5 w-5 shrink-0" />
-              <p>{personalisedError}</p>
             </div>
           )}
 
@@ -830,260 +746,30 @@ export default function ClientWorkspacePage() {
             </Card>
           </div>
 
-          <Card className="border-slate-900 bg-slate-900/20 backdrop-blur-xl">
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-1">
-                <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                  <ClipboardCheck className="h-5 w-5 text-emerald-400" />
-                  <span>Personalised Audit</span>
-                </CardTitle>
-                <CardDescription className="text-slate-400">
-                  Rules adapt to the client profile, website CTAs, funnel type, GA4 events, and GTM implementation evidence.
-                </CardDescription>
-              </div>
-              <Button
-                onClick={handleRunPersonalisedAudit}
-                disabled={runningPersonalisedAudit}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-2 rounded-xl h-10 px-4 cursor-pointer"
-              >
-                {runningPersonalisedAudit ? 'Running...' : clientProfile ? 'Refresh Personalised Audit' : 'Create Client Profile'}
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {!clientProfile && !personalisedAudit ? (
-                <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/30 p-8 text-center">
-                  <ShieldAlert className="mx-auto h-10 w-10 text-slate-600 mb-3" />
-                  <p className="text-sm font-semibold text-slate-200">No personalised profile yet</p>
-                  <p className="text-xs text-slate-500 mt-1">Run a personalised audit to crawl the website, classify the business, and generate adaptive tracking expectations.</p>
+          <Link href={`/clients/${clientId}/personalised-audit`} className="block group">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/20 backdrop-blur-xl p-6 flex items-center justify-between gap-6 transition-all hover:border-emerald-500/40 hover:bg-slate-900/40">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/20 transition-colors">
+                  <ClipboardCheck className="h-6 w-6 text-emerald-400" />
                 </div>
-              ) : (
-                <Tabs defaultValue="client-profile" className="space-y-5">
-                  <TabsList className="bg-slate-950/70 p-1 border border-slate-900 rounded-xl flex-wrap h-auto">
-                    <TabsTrigger value="client-profile" className="rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Client Profile</TabsTrigger>
-                    <TabsTrigger value="measurement-coverage" className="rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Measurement Coverage</TabsTrigger>
-                    <TabsTrigger value="cta-tracking" className="rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Website CTA Tracking</TabsTrigger>
-                    <TabsTrigger value="personalised-recommendations" className="rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Recommendations</TabsTrigger>
-                    <TabsTrigger value="personalised-score" className="rounded-lg px-3 py-2 text-xs font-medium data-[state=active]:bg-emerald-600 data-[state=active]:text-white">Health Score</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="client-profile" className="space-y-5">
-                    <div className="grid gap-4 md:grid-cols-4">
-                      {[
-                        ['Industry', formatLabel(clientProfile?.industry)],
-                        ['Business Model', formatLabel(clientProfile?.businessModel)],
-                        ['Funnel Type', formatLabel(clientProfile?.funnelType)],
-                        ['Confidence', `${Math.round((clientProfile?.confidence || 0) * 100)}%`]
-                      ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-slate-900 bg-slate-950/40 p-4">
-                          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{label}</p>
-                          <p className="mt-1 text-sm font-semibold text-slate-200">{value}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-lg border border-slate-900 bg-slate-950/30 p-4">
-                        <p className="text-xs font-bold text-slate-300 mb-3">Primary Conversion Goals</p>
-                        <div className="flex flex-wrap gap-2">
-                          {clientProfile?.primaryConversionGoals?.map((goal: string) => (
-                            <Badge key={goal} className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400">{formatLabel(goal)}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-slate-900 bg-slate-950/30 p-4">
-                        <p className="text-xs font-bold text-slate-300 mb-3">Secondary Conversion Goals</p>
-                        <div className="flex flex-wrap gap-2">
-                          {clientProfile?.secondaryConversionGoals?.map((goal: string) => (
-                            <Badge key={goal} variant="outline" className="border-slate-700 text-slate-300">{formatLabel(goal)}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="rounded-lg border border-slate-900 bg-slate-950/30 p-4">
-                        <p className="text-xs font-bold text-slate-300 mb-3">Detected CTAs</p>
-                        <div className="max-h-64 overflow-y-auto space-y-2">
-                          {clientProfile?.detectedCTAs?.slice(0, 20).map((cta: any, index: number) => (
-                            <div key={`${cta.label}-${index}`} className="flex items-start justify-between gap-3 rounded-md bg-slate-900/50 p-2">
-                              <div>
-                                <p className="text-xs font-semibold text-slate-200">{cta.label}</p>
-                                <p className="text-[10px] text-slate-500 truncate max-w-[280px]">{cta.pageUrl}</p>
-                              </div>
-                              <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">{formatLabel(cta.type)}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-slate-900 bg-slate-950/30 p-4">
-                        <p className="text-xs font-bold text-slate-300 mb-3">Important Pages</p>
-                        <div className="max-h-64 overflow-y-auto space-y-2">
-                          {clientProfile?.importantPages?.slice(0, 20).map((page: any) => (
-                            <div key={page.url} className="rounded-md bg-slate-900/50 p-2">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">{formatLabel(page.pageType)}</Badge>
-                                <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 text-[10px]">{formatLabel(page.detectedIntent)}</Badge>
-                              </div>
-                              <p className="text-[10px] text-slate-500 truncate mt-1">{page.url}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="measurement-coverage" className="space-y-4">
-                    <div className="overflow-x-auto rounded-lg border border-slate-900">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-950/60 text-slate-400">
-                          <tr>
-                            <th className="px-4 py-3">Expected Event</th>
-                            <th className="px-4 py-3">Priority</th>
-                            <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3">Why It Applies</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-900">
-                          {clientProfile?.expectedEvents?.map((event: any) => (
-                            <tr key={event.eventName} className="bg-slate-950/20">
-                              <td className="px-4 py-3 font-semibold text-slate-200">{event.eventName}</td>
-                              <td className="px-4 py-3">{getSeverityBadge(event.priority === 'critical' ? 'critical' : event.priority)}</td>
-                              <td className="px-4 py-3 text-xs text-slate-300">{expectedEventStatus(event.eventName)}</td>
-                              <td className="px-4 py-3 text-xs text-slate-400 max-w-md">{event.reason}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {personalisedAudit?.gaps?.filter((gap: any) => ['expected-event-not-key-event', 'event-naming-inconsistency'].includes(gap.ruleId)).length > 0 && (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {personalisedAudit.gaps.filter((gap: any) => ['expected-event-not-key-event', 'event-naming-inconsistency'].includes(gap.ruleId)).map((gap: any) => (
-                          <div key={`${gap.ruleId}-${gap.description}`} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                            <p className="text-sm font-semibold text-amber-300">{gap.name}</p>
-                            <p className="text-xs text-slate-400 mt-1">{gap.description}</p>
-                          </div>
-                        ))}
-                      </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-white">Personalised Audit</p>
+                    {hasPersonalisedAudit && (
+                      <Badge className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400 text-[10px]">ACTIVE</Badge>
                     )}
-                  </TabsContent>
-
-                  <TabsContent value="cta-tracking" className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-3">
-                      {['form', 'whatsapp', 'phone', 'email', 'booking', 'checkout', 'signup', 'download'].map((type) => {
-                        const count = clientProfile?.detectedCTAs?.filter((cta: any) => cta.type === type).length || 0;
-                        return (
-                          <div key={type} className="rounded-lg border border-slate-900 bg-slate-950/40 p-3">
-                            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{formatLabel(type)}</p>
-                            <p className="text-2xl font-black text-white mt-1">{count}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="overflow-x-auto rounded-lg border border-slate-900">
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-950/60 text-slate-400">
-                          <tr>
-                            <th className="px-4 py-3">CTA</th>
-                            <th className="px-4 py-3">Type</th>
-                            <th className="px-4 py-3">Page</th>
-                            <th className="px-4 py-3">Tracking Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-900">
-                          {clientProfile?.detectedCTAs?.slice(0, 40).map((cta: any, index: number) => (
-                            <tr key={`${cta.label}-${cta.pageUrl}-${index}`} className="bg-slate-950/20">
-                              <td className="px-4 py-3 font-semibold text-slate-200">{cta.label}</td>
-                              <td className="px-4 py-3"><Badge variant="outline" className="border-slate-700 text-slate-300">{formatLabel(cta.type)}</Badge></td>
-                              <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">{cta.pageUrl}</td>
-                              <td className="px-4 py-3 text-xs text-slate-300">{ctaTrackingStatus(cta)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="personalised-recommendations" className="space-y-4">
-                    {personalisedAudit?.recommendations?.length ? (
-                      personalisedAudit.recommendations.map((rec: any) => (
-                        <div key={rec.id} className="rounded-lg border border-slate-900 bg-slate-950/30 p-4">
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-bold text-slate-100">{rec.title}</p>
-                                {getSeverityBadge(rec.severity)}
-                                {rec.canAutoImplement ? (
-                                  <Badge className="bg-emerald-500/10 border-emerald-500/20 text-emerald-400">AUTO IMPLEMENTABLE</Badge>
-                                ) : (
-                                  <Badge variant="outline" className="border-slate-700 text-slate-400">MANUAL REVIEW</Badge>
-                                )}
-                              </div>
-                              <p className="text-sm text-slate-300">{rec.whyItMatters}</p>
-                              <p className="text-xs text-slate-500">Impact: {rec.businessImpact}</p>
-                              <p className="text-xs text-slate-400">Fix: {rec.recommendedFix}</p>
-                            </div>
-                            {rec.canAutoImplement && (
-                              <Button
-                                onClick={() => handleImplementPersonalisedRecommendation(rec)}
-                                className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl gap-2 cursor-pointer shrink-0"
-                              >
-                                <Sparkles className="h-4 w-4" />
-                                <span>Implement Fix</span>
-                              </Button>
-                            )}
-                          </div>
-                          <div className="mt-3 grid gap-2 md:grid-cols-3">
-                            {Object.entries(rec.evidence || {}).slice(0, 6).map(([key, value]) => (
-                              <div key={key} className="rounded-md bg-slate-900/60 p-2">
-                                <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{formatLabel(key)}</p>
-                                <p className="text-xs text-slate-300 mt-1 break-words">{String(value)}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-slate-900 bg-slate-950/30 p-8 text-center">
-                        <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500 mb-3" />
-                        <p className="text-sm font-semibold text-slate-200">{personalisedAudit ? 'No personalised gaps detected' : 'Run a personalised audit to generate recommendations'}</p>
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="personalised-score" className="space-y-5">
-                    {personalisedAudit ? (
-                      <>
-                        <div className="grid gap-4 md:grid-cols-3">
-                          <div className="rounded-lg border border-slate-900 bg-slate-950/40 p-6 text-center">
-                            <p className={`text-5xl font-black ${getScoreColor(personalisedAudit.score)}`}>{personalisedAudit.score}</p>
-                            <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mt-1">Grade {personalisedAudit.grade}</p>
-                          </div>
-                          <div className="rounded-lg border border-slate-900 bg-slate-950/40 p-4 md:col-span-2">
-                            <p className="text-xs font-bold text-slate-300 mb-2">Why This Score Is Personalised</p>
-                            <p className="text-sm text-slate-400">{personalisedAudit.scoreExplanation}</p>
-                          </div>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {Object.entries(personalisedAudit.categoryScores || {}).map(([category, score]) => (
-                            <div key={category} className="rounded-lg border border-slate-900 bg-slate-950/40 p-4">
-                              <div className="flex justify-between text-xs font-semibold">
-                                <span className="text-slate-300">{formatLabel(category)}</span>
-                                <span className="text-slate-200">{Math.round(Number(score))}/100</span>
-                              </div>
-                              <div className="mt-2 h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Number(score)}%` }} />
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-2">Weight: {personalisedAudit.personalisedWeights?.[category] || 0}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-sm text-slate-400 text-center py-8">Run a personalised audit to calculate adaptive scoring.</p>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Adaptive rules based on website profile, CTAs, funnel type, and GA4/GTM evidence
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 group-hover:gap-3 transition-all shrink-0">
+                <span>{hasPersonalisedAudit ? 'View audit' : 'Get started'}</span>
+                <span>→</span>
+              </div>
+            </div>
+          </Link>
 
           <Tabs defaultValue="active-audit" className="space-y-6">
             <TabsList className="bg-slate-900/60 p-1 border border-slate-900 rounded-xl">
@@ -1383,29 +1069,29 @@ export default function ClientWorkspacePage() {
             </CardHeader>
             <CardContent className="p-0">
               {/* Messages Area */}
-              <div className="h-64 overflow-y-auto p-6 space-y-4 bg-slate-950/20">
+              <div className="h-80 overflow-y-auto p-6 space-y-4 bg-slate-950/20">
                 {messages.map((msg, index) => (
-                  <div 
+                  <div
                     key={index}
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div 
-                      className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    <div
+                      className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                         msg.role === 'user'
-                          ? 'bg-indigo-600 text-white rounded-tr-none'
-                          : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
+                          ? 'bg-indigo-600 text-white rounded-tr-none text-sm leading-relaxed'
+                          : 'bg-slate-900/80 border border-slate-800/80 rounded-tl-none'
                       }`}
                     >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                      <ChatMessage content={msg.content} role={msg.role} />
                     </div>
                   </div>
                 ))}
                 {sendingMessage && (
                   <div className="flex justify-start">
-                    <div className="bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none px-4 py-2.5 flex items-center gap-1">
-                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"></div>
-                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 delay-100"></div>
-                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 delay-200"></div>
+                    <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl rounded-tl-none px-4 py-3 flex items-center gap-1.5">
+                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400" />
+                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400" style={{ animationDelay: '0.15s' }} />
+                      <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400" style={{ animationDelay: '0.3s' }} />
                     </div>
                   </div>
                 )}
