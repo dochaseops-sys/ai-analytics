@@ -4,7 +4,7 @@ import { ga4ConnectedRule } from './rules/ga4-connected';
 import { gtmConnectedRule } from './rules/gtm-connected';
 import { purchaseExistsRule } from './rules/purchase-exists';
 import { leadExistsRule } from './rules/lead-exists';
-import { formSubmitExistsRule } from './rules/form-submit-exists';
+import { pageViewExistsRule } from './rules/page-view-exists';
 import { duplicateEventsRule } from './rules/duplicate-events';
 import { consentModeRule } from './rules/consent-mode';
 import { events7DaysRule } from './rules/events-7days';
@@ -16,7 +16,7 @@ const rules: AuditRule[] = [
   gtmConnectedRule,
   purchaseExistsRule,
   leadExistsRule,
-  formSubmitExistsRule,
+  pageViewExistsRule,
   duplicateEventsRule,
   consentModeRule,
   events7DaysRule,
@@ -132,11 +132,11 @@ Return the result as a JSON array of objects, with each object containing "issue
 
   // 4. Event Quality (15 points)
   if (ga4Connected) {
-    const formSubmitExists = getRuleResult('form-submit-exists')?.passed ?? false;
+    const pageViewExists = getRuleResult('page-view-exists')?.passed ?? false;
     const duplicateEvents = getRuleResult('duplicate-events')?.passed ?? false;
     const events7Days = getRuleResult('events-7days')?.passed ?? false;
 
-    if (formSubmitExists) eventQualityScore += 5;
+    if (pageViewExists) eventQualityScore += 5;
     if (duplicateEvents) eventQualityScore += 5; // Passed means no duplicate events detected
     if (events7Days) eventQualityScore += 5;
   }

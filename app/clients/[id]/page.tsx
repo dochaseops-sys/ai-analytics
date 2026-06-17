@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { ChatMessage } from '@/components/chat-message';
+import { AuditModal } from '@/components/audit-modal';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard-layout';
@@ -62,6 +63,7 @@ export default function ClientWorkspacePage() {
   const [latestAudit, setLatestAudit] = useState<any>(null);
   const [auditHistory, setAuditHistory] = useState<any[]>([]);
   const [runningAudit, setRunningAudit] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [hasPersonalisedAudit, setHasPersonalisedAudit] = useState(false);
 
@@ -328,18 +330,33 @@ export default function ClientWorkspacePage() {
     }
   };
 
-  const handleRunAudit = async () => {
+  const handleRunAudit = async (params?: {
+    leadTypes: string[];
+    leadEventNames: Record<string, string>;
+    purchaseEventName: string;
+    pageViewEventName: string;
+  }) => {
     try {
       setRunningAudit(true);
       setAuditError(null);
       const res = await fetch('/api/audit/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId })
+        body: JSON.stringify({
+          clientId,
+          ...params
+        })
       });
       const data = await res.json();
       if (data.success) {
         await fetchAudits();
+        if (params) {
+          setClient((prev: any) => ({
+            ...prev,
+            ...params
+          }));
+        }
+        setIsAuditModalOpen(false);
       } else {
         setAuditError(data.error || 'Failed to run tracking health audit.');
       }
@@ -519,7 +536,7 @@ export default function ClientWorkspacePage() {
                 </Button>
               </Link>
               <Button
-                onClick={handleRunAudit}
+                onClick={() => setIsAuditModalOpen(true)}
                 disabled={runningAudit}
                 className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium gap-2 rounded-xl h-11 px-5 shadow-lg shadow-indigo-600/10 cursor-pointer"
               >
@@ -981,7 +998,7 @@ export default function ClientWorkspacePage() {
                                     ) : (
                                       <>
                                         <Badge className="bg-rose-500/10 border-rose-500/20 text-rose-400">FAILED</Badge>
-                                        {['lead-exists', 'conversions-configured', 'form-submit-exists', 'gtm-no-triggers', 'consent-mode'].includes(res.issueId) && (
+                                        {['lead-exists', 'conversions-configured', 'gtm-no-triggers', 'consent-mode'].includes(res.issueId) && (
                                           <Button 
                                             variant="outline" 
                                             onClick={() => handleImplementRecommendation(res)}
@@ -1119,6 +1136,13 @@ export default function ClientWorkspacePage() {
           </Card>
         </div>
       )}
+      <AuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        onSubmit={handleRunAudit}
+        initialData={client}
+        isLoading={runningAudit}
+      />
     </DashboardLayout>
   );
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { getValidAccessToken } from '@/lib/google-auth';
+import { getValidAccessToken, GoogleAccountNotConnectedError } from '@/lib/google-auth';
 import { adminDb } from '@/lib/firebase-admin';
 
 export async function POST(req: NextRequest) {
@@ -220,11 +220,11 @@ export async function POST(req: NextRequest) {
           }
 
           if (ga4Connected) {
-            const formSubmitExists = getRuleResult('form-submit-exists')?.passed ?? false;
+            const pageViewExists = getRuleResult('page-view-exists')?.passed ?? false;
             const duplicateEvents = getRuleResult('duplicate-events')?.passed ?? false;
             const events7Days = getRuleResult('events-7days')?.passed ?? false;
 
-            if (formSubmitExists) eventQualityScore += 5;
+            if (pageViewExists) eventQualityScore += 5;
             if (duplicateEvents) eventQualityScore += 5;
             if (events7Days) eventQualityScore += 5;
           }
@@ -272,7 +272,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, message });
 
   } catch (error) {
+    if (error instanceof GoogleAccountNotConnectedError) {
+      console.warn(`Deploy-fix: Google account not connected for client ${error.clientId}`);
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
     console.error('Error deploying recommendation fix:', error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to deploy fix. Please try again.' }, { status: 500 });
   }
 }

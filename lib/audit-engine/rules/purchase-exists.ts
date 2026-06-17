@@ -1,10 +1,5 @@
 import { AuditRule, AuditResult } from '../types';
-import { findMatchingName, findMatchingConversion, findGtmTagByName } from './rule-utils';
-
-const purchaseEventPatterns = [
-  'purchase', 'ecommerce_purchase', 'checkout_complete',
-  'order_completed', 'subscribe', 'transaction', 'order placed', 'order completion'
-];
+import { findGtmTagByName } from './rule-utils';
 
 export const purchaseExistsRule: AuditRule = {
   id: 'purchase-exists',
@@ -12,28 +7,39 @@ export const purchaseExistsRule: AuditRule = {
   category: 'Conversion Tracking',
   severity: 'critical',
   async run(context): Promise<AuditResult> {
-    const eventNames = context.ga4Data?.eventsList ?? [];
-    const matchedEvent = findMatchingName(eventNames, purchaseEventPatterns);
-    const matchedConversion = findMatchingConversion(context.ga4Data?.conversions, purchaseEventPatterns);
-    const matchedGtmTag = findGtmTagByName(context.gtmData?.tags, purchaseEventPatterns);
-    const hasPurchaseEvent = !!context.ga4Data?.hasPurchaseEvent || !!matchedEvent || !!matchedConversion || !!matchedGtmTag;
+    const purchaseEventName = context.purchaseEventName?.trim() || 'purchase';
+    const ga4Events = context.ga4Data?.eventsList ?? [];
+
+    // 1. make sure the default purchase event in GA4 is receiving data from the website
+    const hasDefaultPurchase = ga4Events.some(e => e.toLowerCase() === 'purchase');
+
+    // 2. make sure there is a purchase event setup in the GTM container with the purchase event name provided by the user
+    const hasPurchaseInGTM = !!findGtmTagByName(context.gtmData?.tags, [purchaseEventName]);
+
+    // 3. make sure the purchase event name is also present in GA4
+    const isPurchaseNameInGA4 = ga4Events.some(e => e.toLowerCase() === purchaseEventName.toLowerCase());
+
+    const passed = hasDefaultPurchase && hasPurchaseInGTM && isPurchaseNameInGA4;
 
     let description = '';
-    let recommendation = 'Ensure that purchase events are sending accurate items, value, and currency parameters.';
+    let recommendation = '';
 
-    if (hasPurchaseEvent) {
-      if (matchedEvent) {
-        description = `Purchase event tracking is active (detected "${matchedEvent}" in GA4 events).`;
-      } else if (matchedConversion) {
-        description = `Purchase tracking is active (detected conversion "${matchedConversion.name}" in GA4).`;
-      } else if (matchedGtmTag) {
-        description = `Purchase tracking appears configured in GTM (tag "${matchedGtmTag.name}"). Verify that this tag is firing and sending data to GA4.`;
-      } else {
-        description = 'Purchase event tracking is active and receiving data.';
-      }
+    if (passed) {
+      description = `Purchase event tracking is fully active. Default 'purchase' event is receiving data in GA4, and user-specified event '${purchaseEventName}' is configured in GTM and receiving data in GA4.`;
+      recommendation = 'Keep monitoring purchase event data to ensure conversion parameters (value, currency, items) are fully captured.';
     } else {
-      description = 'No purchase events have been detected in GA4. E-commerce tracking is missing or broken.';
-      recommendation = 'Implement the GA4 standard "purchase" event on your checkout completion or order confirmation pages.';
+      const issues: string[] = [];
+      if (!hasDefaultPurchase) {
+        issues.push("Default 'purchase' event is not receiving data in GA4");
+      }
+      if (!hasPurchaseInGTM) {
+        issues.push(`Event '${purchaseEventName}' is not set up in the GTM container`);
+      }
+      if (!isPurchaseNameInGA4) {
+        issues.push(`Event '${purchaseEventName}' is not present or receiving data in GA4`);
+      }
+      description = `Purchase tracking validation failed: ${issues.join(', ')}.`;
+      recommendation = `Ensure that the default 'purchase' event is fired from the site and '${purchaseEventName}' is set up as a GTM tag and registered in GA4.`;
     }
 
     return {
@@ -43,7 +49,7 @@ export const purchaseExistsRule: AuditRule = {
       description,
       recommendation,
       category: this.category,
-      passed: hasPurchaseEvent
+      passed
     };
   }
 };

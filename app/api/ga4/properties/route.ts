@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { getValidAccessToken } from '@/lib/google-auth';
+import { getValidAccessToken, GoogleAccountNotConnectedError } from '@/lib/google-auth';
 import { adminDb } from '@/lib/firebase-admin';
 
 export async function GET(req: NextRequest) {
@@ -49,8 +49,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ properties });
   } catch (error) {
+    if (error instanceof GoogleAccountNotConnectedError) {
+      console.warn(`GA4 properties: Google account not connected for client ${error.clientId}`);
+      return NextResponse.json({ error: error.message }, { status: 401 });
+    }
     console.error('Error fetching GA4 properties:', error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch GA4 properties. Please try again.' }, { status: 500 });
   }
 }
 

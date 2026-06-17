@@ -1,6 +1,24 @@
 import { google } from 'googleapis';
 import { adminDb } from './firebase-admin';
 
+/**
+ * Thrown when a client has not yet connected their Google (GTM / GA4) account.
+ * Callers can `instanceof` check this to surface a friendly prompt to the user.
+ */
+export class GoogleAccountNotConnectedError extends Error {
+  /** The clientId is stored here for server-side logging only — never send it to the client. */
+  readonly clientId: string;
+
+  constructor(clientId: string) {
+    super(
+      'To run an audit, please connect your Google Tag Manager and GA4 account. ' +
+      'Go to Settings → Integrations and click "Connect Google Account" to get started.'
+    );
+    this.name = 'GoogleAccountNotConnectedError';
+    this.clientId = clientId;
+  }
+}
+
 const getOAuth2Client = (origin: string) => {
   return new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -56,7 +74,7 @@ export const getValidAccessToken = async (clientId: string): Promise<string> => 
   const doc = await credentialsRef.get();
 
   if (!doc.exists) {
-    throw new Error(`Google credentials not found for client ${clientId}`);
+    throw new GoogleAccountNotConnectedError(clientId);
   }
 
   const data = doc.data()!;

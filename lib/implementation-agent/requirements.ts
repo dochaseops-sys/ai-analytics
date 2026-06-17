@@ -56,7 +56,7 @@ export function detectTagIntent(command: string, recommendation?: unknown, answe
   if (text.includes('ga4') || text.includes('whatsapp') || text.includes('form_submit') || text.includes('generate_lead') || text.includes('event')) return 'ga4_event';
   if (text.includes('third-party') || text.includes('script') || text.includes('custom html') || /<script/i.test(command)) return 'custom_html';
 
-  if (issueId === 'form-submit-exists' || issueId === 'lead-exists') {
+  if (issueId === 'form-submit-exists' || issueId === 'lead-exists' || issueId === 'page-view-exists') {
     return 'ga4_event';
   }
 
@@ -104,11 +104,12 @@ export function analyzeRequirements(context: RequirementContext): RequirementAna
       recommendationContextValue(context.recommendation, 'eventName') ||
       (command.includes('whatsapp') ? 'whatsapp_click' : undefined) ||
       (command.includes('lead') ? 'generate_lead' : undefined) ||
-      (command.includes('form_submit') || recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined);
+      (command.includes('form_submit') || recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined) ||
+      (recommendationValue(context.recommendation, 'issueId') === 'page-view-exists' ? 'page_view' : undefined);
     if (eventName) inferred.eventName = eventName;
     else missing.push({ field: 'eventName', question: 'What GA4 event name should be created?' });
 
-    const inferredTrigger = trigger || recommendationTrigger || (command.includes('whatsapp') ? 'click' : recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : undefined);
+    const inferredTrigger = trigger || recommendationTrigger || (command.includes('whatsapp') ? 'click' : recommendationValue(context.recommendation, 'issueId') === 'form-submit-exists' ? 'form_submit' : recommendationValue(context.recommendation, 'issueId') === 'page-view-exists' ? 'pageview' : undefined);
     if (inferredTrigger) inferred.trigger = inferredTrigger;
     else missing.push({ field: 'trigger', question: 'What user action or page condition should fire this event?' });
   }

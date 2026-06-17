@@ -1,11 +1,5 @@
 import { AuditRule, AuditResult } from '../types';
-import { findMatchingName, findMatchingConversion, findGtmTagByName, getSummaryList } from './rule-utils';
-
-const leadEventPatterns = [
-  'generate_lead', 'lead', 'sign_up', 'signup',
-  'registration', 'register', 'complete_registration',
-  'contact', 'contact_us', 'new_lead', 'form_submit'
-];
+import { findGtmTagByName } from './rule-utils';
 
 export const leadExistsRule: AuditRule = {
   id: 'lead-exists',
@@ -13,34 +7,51 @@ export const leadExistsRule: AuditRule = {
   category: 'Conversion Tracking',
   severity: 'high',
   async run(context): Promise<AuditResult> {
-    const eventNames = context.ga4Data?.eventsList ?? [];
-    const matchedEvent = findMatchingName(eventNames, leadEventPatterns);
-    const matchedConversion = findMatchingConversion(context.ga4Data?.conversions, leadEventPatterns);
-    const matchedGtmTag = findGtmTagByName(context.gtmData?.tags, leadEventPatterns);
-    const hasLeadEvent = !!context.ga4Data?.hasLeadEvent || !!matchedEvent || !!matchedConversion || !!matchedGtmTag;
+    const leadEventNames = context.leadEventNames ?? [];
+    const ga4Events = context.ga4Data?.eventsList ?? [];
+
+    let passed = leadEventNames.length > 0;
+    const missingInGA4: string[] = [];
+    const missingInGTM: string[] = [];
+
+    for (const name of leadEventNames) {
+      const trimmedName = name.trim();
+      if (!trimmedName) continue;
+
+      const isPresentInGA4 = ga4Events.some(e => e.toLowerCase() === trimmedName.toLowerCase());
+      const isPresentInGTM = !!findGtmTagByName(context.gtmData?.tags, [trimmedName]);
+
+      if (!isPresentInGA4) {
+        missingInGA4.push(trimmedName);
+      }
+      if (!isPresentInGTM) {
+        missingInGTM.push(trimmedName);
+      }
+    }
+
+    if (missingInGA4.length > 0 || missingInGTM.length > 0 || leadEventNames.length === 0) {
+      passed = false;
+    }
 
     let description = '';
-    let recommendation = 'Confirm that lead parameters (like lead source or value) are being collected.';
+    let recommendation = '';
 
-    if (hasLeadEvent) {
-      if (matchedEvent) {
-        description = `Lead generation event tracking is active (detected "${matchedEvent}" in GA4 events).`;
-      } else if (matchedConversion) {
-        description = `Lead generation tracking is active (detected conversion "${matchedConversion.name}" in GA4).`;
-      } else if (matchedGtmTag) {
-        description = `Lead generation tracking appears configured in GTM (tag "${matchedGtmTag.name}"). Verify that this tag is firing and sending data to GA4.`;
-      } else {
-        description = 'Lead generation event tracking is active and receiving data.';
-      }
+    if (passed) {
+      description = `Lead tracking is fully active. All specified lead events (${leadEventNames.join(', ')}) are configured in GTM and receiving data in GA4.`;
+      recommendation = 'Verify that lead parameters (e.g. form destination, value, source) are correctly mapped to conversion parameters.';
     } else {
-      const detectedForms = context.websiteScan?.detectedLeadForms ?? [];
-      const keyActions = context.websiteScan?.keyActions ?? [];
-      const suggestedActions = getSummaryList([...detectedForms, ...keyActions], 4);
-
-      description = 'No lead generation events were detected in GA4.';
-      recommendation = suggestedActions
-        ? `Set up the GA4 standard 'generate_lead' event to fire for these key actions: ${suggestedActions}.`
-        : 'Set up the GA4 standard "generate_lead" event on your lead capture forms and thank-you pages.';
+      const issues: string[] = [];
+      if (leadEventNames.length === 0) {
+        issues.push("No lead event names were provided for audit validation");
+      }
+      if (missingInGTM.length > 0) {
+        issues.push(`Lead event(s) not setup in GTM: ${missingInGTM.join(', ')}`);
+      }
+      if (missingInGA4.length > 0) {
+        issues.push(`Lead event(s) not receiving data in GA4: ${missingInGA4.join(', ')}`);
+      }
+      description = `Lead tracking validation failed: ${issues.join('; ')}.`;
+      recommendation = `Ensure that all required lead events (${leadEventNames.join(', ')}) are deployed in GTM and registered/receiving data in GA4.`;
     }
 
     return {
@@ -50,7 +61,7 @@ export const leadExistsRule: AuditRule = {
       description,
       recommendation,
       category: this.category,
-      passed: hasLeadEvent
+      passed
     };
   }
 };

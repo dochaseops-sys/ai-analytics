@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { AuditModal } from '@/components/audit-modal';
 import Link from 'next/link';
 import DashboardLayout from '@/components/dashboard-layout';
 import { db } from '@/lib/firebase';
@@ -164,6 +165,8 @@ export default function PersonalisedAuditPage() {
 
   const [clientName, setClientName]       = useState('');
   const [clientProfile, setClientProfile] = useState<any>(null);
+  const [clientData, setClientData]       = useState<any>(null);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [audit, setAudit]                 = useState<any>(null);
   const [loading, setLoading]             = useState(true);
   const [running, setRunning]             = useState(false);
@@ -172,7 +175,10 @@ export default function PersonalisedAuditPage() {
   const fetchData = async () => {
     try {
       const clientDoc = await getDoc(doc(db, 'clients', clientId));
-      if (clientDoc.exists()) setClientName(clientDoc.data().name || '');
+      if (clientDoc.exists()) {
+        setClientName(clientDoc.data().name || '');
+        setClientData(clientDoc.data());
+      }
       const [pRes, aRes] = await Promise.all([
         fetch(`/api/client-intelligence/profile/${clientId}`),
         fetch(`/api/audit/personalised/${clientId}`),
@@ -185,15 +191,34 @@ export default function PersonalisedAuditPage() {
 
   useEffect(() => { fetchData(); }, [clientId]);
 
-  const handleRun = async () => {
+  const handleRun = async (params?: {
+    leadTypes: string[];
+    leadEventNames: Record<string, string>;
+    purchaseEventName: string;
+    pageViewEventName: string;
+  }) => {
     setRunning(true); setError(null);
     try {
       const res  = await fetch('/api/audit/personalised/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, refreshProfile: !clientProfile }),
+        body: JSON.stringify({
+          clientId,
+          refreshProfile: !clientProfile,
+          ...params
+        }),
       });
       const data = await res.json();
-      if (data.success) { setClientProfile(data.profile); setAudit(data.auditRun); }
+      if (data.success) {
+        setClientProfile(data.profile);
+        setAudit(data.auditRun);
+        if (params) {
+          setClientData((prev: any) => ({
+            ...prev,
+            ...params
+          }));
+        }
+        setIsAuditModalOpen(false);
+      }
       else setError(data.error || 'Failed to run audit.');
     } catch (e) { setError((e as Error).message); }
     finally { setRunning(false); }
@@ -272,7 +297,7 @@ export default function PersonalisedAuditPage() {
               </a>
             )}
             <Button
-              onClick={handleRun}
+              onClick={() => setIsAuditModalOpen(true)}
               disabled={running}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium gap-2 rounded-xl h-10 px-4 shadow-lg shadow-emerald-600/10 cursor-pointer"
             >
@@ -550,6 +575,13 @@ export default function PersonalisedAuditPage() {
           </div>
         )}
       </div>
+      <AuditModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        onSubmit={handleRun}
+        initialData={clientData}
+        isLoading={running}
+      />
     </DashboardLayout>
   );
 }

@@ -49,6 +49,10 @@ export interface AuditContext {
     keyActions: string[];
     detectedLeadForms: string[];
   };
+  leadTypes?: string[];
+  leadEventNames?: string[];
+  purchaseEventName?: string;
+  pageViewEventName?: string;
 }
 
 export type Severity = 'critical' | 'high' | 'medium' | 'low';

@@ -10,6 +10,16 @@ export async function POST(req: NextRequest) {
     const clientId = body.clientId as string | undefined;
     if (!clientId) return NextResponse.json({ error: 'Missing clientId.' }, { status: 400 });
 
+    const { leadTypes, leadEventNames, purchaseEventName, pageViewEventName } = body;
+    if (leadTypes !== undefined || leadEventNames !== undefined || purchaseEventName !== undefined || pageViewEventName !== undefined) {
+      const updateData: Record<string, any> = {};
+      if (leadTypes !== undefined) updateData.leadTypes = leadTypes;
+      if (leadEventNames !== undefined) updateData.leadEventNames = leadEventNames;
+      if (purchaseEventName !== undefined) updateData.purchaseEventName = purchaseEventName;
+      if (pageViewEventName !== undefined) updateData.pageViewEventName = pageViewEventName;
+      await adminDb.collection('clients').doc(clientId).update(updateData);
+    }
+
     const evidence = await fetchAuditEvidence(clientId);
     let profile = body.refreshProfile ? undefined : await getClientProfile(clientId);
     let snapshot = await getLatestWebsiteSnapshot(clientId);

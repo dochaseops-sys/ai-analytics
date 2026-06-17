@@ -9,7 +9,7 @@ import { scanWebsite } from '@/lib/website-scanner';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { clientId } = body;
+    const { clientId, leadTypes, leadEventNames, purchaseEventName, pageViewEventName } = body;
 
     if (!clientId) {
       return NextResponse.json({ error: 'Missing clientId parameter' }, { status: 400 });
@@ -23,6 +23,21 @@ export async function POST(req: NextRequest) {
     const clientDataDb = clientDoc.exists ? clientDoc.data() : null;
     const ga4DataDb = ga4Doc.exists ? ga4Doc.data() : null;
     const gtmDataDb = gtmDoc.exists ? gtmDoc.data() : null;
+
+    // Persist configuration in Firestore if passed in the request body
+    const finalLeadTypes = leadTypes !== undefined ? leadTypes : (clientDataDb?.leadTypes || []);
+    const finalLeadEventNames = (leadEventNames !== undefined ? leadEventNames : (clientDataDb?.leadEventNames || {})) as Record<string, string>;
+    const finalPurchaseEventName = purchaseEventName !== undefined ? purchaseEventName : (clientDataDb?.purchaseEventName || 'purchase');
+    const finalPageViewEventName = pageViewEventName !== undefined ? pageViewEventName : (clientDataDb?.pageViewEventName || 'page_view');
+
+    if (leadTypes !== undefined || leadEventNames !== undefined || purchaseEventName !== undefined || pageViewEventName !== undefined) {
+      await adminDb.collection('clients').doc(clientId).update({
+        leadTypes: finalLeadTypes,
+        leadEventNames: finalLeadEventNames,
+        purchaseEventName: finalPurchaseEventName,
+        pageViewEventName: finalPageViewEventName
+      });
+    }
 
     let industry = clientDataDb?.industry;
     let ga4PropertyId = ga4DataDb?.propertyId;
@@ -225,7 +240,11 @@ export async function POST(req: NextRequest) {
       gtmData,
       websiteUrl,
       industry,
-      websiteScan
+      websiteScan,
+      leadTypes: finalLeadTypes,
+      leadEventNames: Object.values(finalLeadEventNames) as string[],
+      purchaseEventName: finalPurchaseEventName,
+      pageViewEventName: finalPageViewEventName
     };
 
     const auditSummary = await runAudit(auditContext);
